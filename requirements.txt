@@ -1,4 +1,6 @@
    streamlit
    openai
+   google-genai
+   anthropic
    pypdf
    python-docx
