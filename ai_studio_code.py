@@ -1,6 +1,8 @@
 import io
 import streamlit as st
 from openai import OpenAI
+from google import genai
+from anthropic import Anthropic
 from pypdf import PdfReader
 from docx import Document
 
@@ -17,7 +19,13 @@ st.markdown("依據 **Dr. Angel M. Y. Lin (林敏宜教授)** 之 SFL Genre Peda
 # 側邊欄設定
 with st.sidebar:
     st.header("🔑 系統與學科設定")
-    api_key = st.text_input("請輸入 OpenAI API Key：", type="password", help="需填入有效 API Key 才能呼叫 AI 模型。")
+    
+    # 讓使用者任選 AI 廠商
+    ai_provider = st.selectbox(
+        "選擇 AI 廠商 (Provider)：",
+        ["OpenAI", "Google Gemini", "Anthropic Claude"]
+    )
+    api_key = st.text_input(f"請輸入 {ai_provider} API Key：", type="password", help=f"需填入有效 {ai_provider} API Key 才能呼叫 AI 模型。")
     
     st.markdown("---")
     subject = st.selectbox(
@@ -99,28 +107,53 @@ SYSTEM_PROMPT = """
 st.subheader("2. 執行分析與生成")
 if st.button("🚀 開始進行 Genre 分析並生成教材", type="primary"):
     if not api_key:
-        st.error("⚠️ 請先在左側欄位輸入 OpenAI API Key！")
+        st.error(f"⚠️ 請先在左側欄位輸入 {ai_provider} API Key！")
     elif not raw_text.strip():
         st.warning("⚠️ 請先貼上文本或上傳文件！")
     else:
-        client = OpenAI(api_key=api_key)
         user_message = f"學科領域：{subject}\n課程單元：{topic}\n文本內容：\n{raw_text}"
         
         with st.spinner("AI 正在以 SFL Genre 理論解構文本並打造國一專用鷹架教材，請稍候..."):
             try:
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_message}
-                    ],
-                    temperature=0.3
-                )
-                output_result = response.choices[0].message.content
+                # 根據使用者的選擇，分流呼叫不同廠商的 API
+                if ai_provider == "OpenAI":
+                    client = OpenAI(api_key=api_key)
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": user_message}
+                        ],
+                        temperature=0.3
+                    )
+                    output_result = response.choices[0].message.content
+
+                elif ai_provider == "Google Gemini":
+                    client = genai.Client(api_key=api_key)
+                    response = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=f"{SYSTEM_PROMPT}\n\n任務請求：\n{user_message}"
+                    )
+                    output_result = response.text
+
+                elif ai_provider == "Anthropic Claude":
+                    client = Anthropic(api_key=api_key)
+                    message = client.messages.create(
+                        model="claude-3-5-sonnet-latest",
+                        max_tokens=4000,
+                        system=SYSTEM_PROMPT,
+                        messages=[
+                            {"role": "user", "content": user_message}
+                        ],
+                        temperature=0.3
+                    )
+                    output_result = message.content[0].text
+                
                 st.session_state["result"] = output_result
                 st.success("✅ 分析與教材生成完畢！")
+                
             except Exception as e:
-                st.error(f"執行出錯：{str(e)}")
+                st.error(f"執行出錯：{str(e)}，請確認您的 API Key 是否正確且有足夠額度。")
 
 # 結果展示與下載區
 if "result" in st.session_state:
